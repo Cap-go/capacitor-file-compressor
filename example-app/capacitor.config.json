@@ -1,0 +1,10 @@
+{
+  "appId": "app.capgo.filecompressor",
+  "appName": "File Compressor Example",
+  "webDir": "dist",
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false
+    }
+  }
+}

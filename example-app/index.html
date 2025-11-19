@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>File Compressor Plugin Example</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      h1 {
+        color: #333;
+        border-bottom: 2px solid #007bff;
+        padding-bottom: 10px;
+      }
+      .control-group {
+        margin: 20px 0;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 500;
+        color: #555;
+      }
+      input[type="file"],
+      input[type="range"],
+      input[type="number"],
+      select {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin-bottom: 10px;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        width: 100%;
+        margin-top: 10px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .preview {
+        margin-top: 20px;
+      }
+      .image-container {
+        display: flex;
+        gap: 20px;
+        margin-top: 10px;
+      }
+      .image-box {
+        flex: 1;
+      }
+      .image-box h3 {
+        margin: 0 0 10px 0;
+        color: #555;
+        font-size: 14px;
+      }
+      .image-box img {
+        max-width: 100%;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      .info {
+        margin-top: 5px;
+        font-size: 12px;
+        color: #666;
+      }
+      .quality-value {
+        float: right;
+        color: #007bff;
+        font-weight: bold;
+      }
+      .error {
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+        padding: 10px;
+        border-radius: 4px;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>File Compressor Plugin Example</h1>
+
+      <div class="control-group">
+        <label for="fileInput">Select Image:</label>
+        <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" />
+      </div>
+
+      <div class="control-group">
+        <label for="quality">
+          Quality:
+          <span class="quality-value" id="qualityValue">0.6</span>
+        </label>
+        <input type="range" id="quality" min="0" max="1" step="0.1" value="0.6" />
+      </div>
+
+      <div class="control-group">
+        <label for="width">Width (px, optional):</label>
+        <input type="number" id="width" placeholder="Leave empty to maintain aspect ratio" />
+      </div>
+
+      <div class="control-group">
+        <label for="height">Height (px, optional):</label>
+        <input type="number" id="height" placeholder="Leave empty to maintain aspect ratio" />
+      </div>
+
+      <div class="control-group">
+        <label for="mimeType">Output Format:</label>
+        <select id="mimeType">
+          <option value="image/jpeg" selected>JPEG</option>
+          <option value="image/webp">WebP</option>
+        </select>
+      </div>
+
+      <button id="compressBtn" disabled>Compress Image</button>
+
+      <div id="error" class="error" style="display: none;"></div>
+
+      <div class="preview" id="preview" style="display: none;">
+        <h2>Results</h2>
+        <div class="image-container">
+          <div class="image-box">
+            <h3>Original Image</h3>
+            <img id="originalImage" />
+            <div class="info" id="originalInfo"></div>
+          </div>
+          <div class="image-box">
+            <h3>Compressed Image</h3>
+            <img id="compressedImage" />
+            <div class="info" id="compressedInfo"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
