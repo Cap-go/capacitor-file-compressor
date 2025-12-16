@@ -24,6 +24,7 @@
   "bugs": {
     "url": "https://github.com/Cap-go/capacitor-file-compressor/issues"
   },
+  "homepage": "https://capgo.app/docs/plugins/file-compressor/",
   "keywords": [
     "capacitor",
     "plugin",
