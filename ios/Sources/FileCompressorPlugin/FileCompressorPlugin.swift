@@ -4,7 +4,7 @@ import UIKit
 
 @objc(FileCompressorPlugin)
 public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
-    private let pluginVersion: String = "8.0.14"
+    private let pluginVersion: String = "8.0.15"
     public let identifier = "FileCompressorPlugin"
     public let jsName = "FileCompressor"
     public let pluginMethods: [CAPPluginMethod] = [
