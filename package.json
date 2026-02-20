@@ -1,6 +1,6 @@
 {
   "name": "@capgo/capacitor-file-compressor",
-  "version": "8.0.16",
+  "version": "8.0.17",
   "description": "Capacitor plugin for efficient image compression supporting PNG, JPEG, and WebP formats across iOS, Android, and Web platforms",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
