@@ -18,7 +18,7 @@ import java.util.UUID;
 @CapacitorPlugin(name = "FileCompressor")
 public class FileCompressorPlugin extends Plugin {
 
-    private final String pluginVersion = "8.0.24";
+    private final String pluginVersion = "8.0.25";
 
     @PluginMethod
     public void compressImage(PluginCall call) {
