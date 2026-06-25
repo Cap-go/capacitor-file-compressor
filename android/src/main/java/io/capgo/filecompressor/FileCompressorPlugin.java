@@ -1,9 +1,9 @@
 package io.capgo.filecompressor;
 
+import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
-import android.webkit.MimeTypeMap;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -13,12 +13,17 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 @CapacitorPlugin(name = "FileCompressor")
 public class FileCompressorPlugin extends Plugin {
 
     private final String pluginVersion = "8.0.34";
+    private static final float MIN_QUALITY = 0.1f;
+    private static final float QUALITY_STEP = 0.05f;
+    private static final List<String> SUPPORTED_OUTPUT_MIME_TYPES = Arrays.asList("image/jpeg", "image/png", "image/webp");
 
     @PluginMethod
     public void compressImage(PluginCall call) {
@@ -31,56 +36,45 @@ public class FileCompressorPlugin extends Plugin {
         float quality = call.getFloat("quality", 0.6f);
         Integer width = call.getInt("width");
         Integer height = call.getInt("height");
-        String mimeType = call.getString("mimeType", "image/jpeg");
+        String mimeType = call.getString("mimeType", "image/jpeg").toLowerCase();
 
-        // Validate mime type for Android
-        if (!mimeType.equals("image/jpeg") && !mimeType.equals("image/webp")) {
-            call.reject("Only image/jpeg and image/webp are supported on Android");
+        if (!SUPPORTED_OUTPUT_MIME_TYPES.contains(mimeType)) {
+            call.reject("Unsupported output mimeType: " + mimeType + ". Supported: " + String.join(", ", SUPPORTED_OUTPUT_MIME_TYPES));
             return;
         }
 
-        // Validate quality range
         if (quality < 0.0f || quality > 1.0f) {
             call.reject("quality must be between 0.0 and 1.0");
             return;
         }
 
         try {
-            // Load bitmap from path
+            long maxBytes = getOriginalFileSize(path);
+            OutputFormat outputFormat = OutputFormat.fromMimeType(mimeType);
+
             Bitmap bitmap = loadBitmapFromPath(path);
             if (bitmap == null) {
                 call.reject("Failed to load image from path");
                 return;
             }
 
-            // Resize bitmap if dimensions are provided
+            int[] targetDimensions = calculateTargetDimensions(bitmap, width, height);
             Bitmap processedBitmap = bitmap;
-            if (width != null && height != null) {
-                processedBitmap = Bitmap.createScaledBitmap(bitmap, width, height, true);
-            } else if (width != null) {
-                float aspectRatio = (float) bitmap.getHeight() / bitmap.getWidth();
-                int targetHeight = (int) (width * aspectRatio);
-                processedBitmap = Bitmap.createScaledBitmap(bitmap, width, targetHeight, true);
-            } else if (height != null) {
-                float aspectRatio = (float) bitmap.getWidth() / bitmap.getHeight();
-                int targetWidth = (int) (height * aspectRatio);
-                processedBitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, height, true);
+            if (targetDimensions[0] != bitmap.getWidth() || targetDimensions[1] != bitmap.getHeight()) {
+                processedBitmap = Bitmap.createScaledBitmap(bitmap, targetDimensions[0], targetDimensions[1], true);
             }
 
-            // Compress bitmap
-            File compressedFile = compressBitmap(processedBitmap, quality, mimeType);
+            File compressedFile = compressBitmap(processedBitmap, quality, outputFormat, maxBytes);
             if (compressedFile == null) {
                 call.reject("Failed to compress image");
                 return;
             }
 
-            // Clean up
             if (processedBitmap != bitmap) {
                 processedBitmap.recycle();
             }
             bitmap.recycle();
 
-            // Return result
             JSObject result = new JSObject();
             result.put("path", compressedFile.getAbsolutePath());
             call.resolve(result);
@@ -89,9 +83,54 @@ public class FileCompressorPlugin extends Plugin {
         }
     }
 
+    private int[] calculateTargetDimensions(Bitmap bitmap, Integer maxWidth, Integer maxHeight) {
+        int sourceWidth = bitmap.getWidth();
+        int sourceHeight = bitmap.getHeight();
+
+        if (maxWidth == null && maxHeight == null) {
+            return new int[] { sourceWidth, sourceHeight };
+        }
+
+        float ratio = 1f;
+
+        if (maxWidth != null && maxHeight != null) {
+            ratio = Math.min((float) maxWidth / sourceWidth, (float) maxHeight / sourceHeight);
+        } else if (maxWidth != null) {
+            ratio = (float) maxWidth / sourceWidth;
+        } else if (maxHeight != null) {
+            ratio = (float) maxHeight / sourceHeight;
+        }
+
+        ratio = Math.min(ratio, 1f);
+
+        return new int[] { Math.round(sourceWidth * ratio), Math.round(sourceHeight * ratio) };
+    }
+
+    private long getOriginalFileSize(String path) {
+        try {
+            if (path.startsWith("content://")) {
+                Uri uri = Uri.parse(path);
+                try (AssetFileDescriptor descriptor = getContext().getContentResolver().openAssetFileDescriptor(uri, "r")) {
+                    if (descriptor != null) {
+                        return descriptor.getLength();
+                    }
+                }
+            } else {
+                String filePath = path.startsWith("file://") ? path.substring(7) : path;
+                File file = new File(filePath);
+                if (file.exists()) {
+                    return file.length();
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return -1;
+    }
+
     private Bitmap loadBitmapFromPath(String path) {
         try {
-            // Handle content:// URIs
             if (path.startsWith("content://")) {
                 Uri uri = Uri.parse(path);
                 InputStream inputStream = getContext().getContentResolver().openInputStream(uri);
@@ -100,13 +139,10 @@ public class FileCompressorPlugin extends Plugin {
                     inputStream.close();
                     return bitmap;
                 }
-            }
-            // Handle file:// URIs and absolute paths
-            else if (path.startsWith("file://")) {
-                path = path.substring(7); // Remove "file://" prefix
+            } else if (path.startsWith("file://")) {
+                path = path.substring(7);
             }
 
-            // Try loading as file path
             File file = new File(path);
             if (file.exists()) {
                 return BitmapFactory.decodeFile(file.getAbsolutePath());
@@ -117,29 +153,38 @@ public class FileCompressorPlugin extends Plugin {
         return null;
     }
 
-    private File compressBitmap(Bitmap bitmap, float quality, String mimeType) {
-        try {
-            // Determine compression format and file extension
-            Bitmap.CompressFormat format;
-            String extension;
+    private File compressBitmap(Bitmap bitmap, float quality, OutputFormat outputFormat, long maxBytes) {
+        float currentQuality = quality;
+        File lastFile = null;
 
-            if (mimeType.equals("image/webp")) {
-                format = Bitmap.CompressFormat.WEBP;
-                extension = ".webp";
-            } else {
-                format = Bitmap.CompressFormat.JPEG;
-                extension = ".jpg";
+        while (true) {
+            File compressedFile = writeCompressedBitmap(bitmap, outputFormat, currentQuality);
+            if (compressedFile == null) {
+                return lastFile;
             }
 
-            // Create temporary file
+            if (lastFile != null && lastFile != compressedFile) {
+                lastFile.delete();
+            }
+
+            if (maxBytes <= 0 || compressedFile.length() <= maxBytes || currentQuality <= MIN_QUALITY || !outputFormat.supportsQuality) {
+                return compressedFile;
+            }
+
+            lastFile = compressedFile;
+            currentQuality = Math.max(MIN_QUALITY, currentQuality - QUALITY_STEP);
+        }
+    }
+
+    private File writeCompressedBitmap(Bitmap bitmap, OutputFormat outputFormat, float quality) {
+        try {
             File tempDir = getContext().getCacheDir();
-            String fileName = "compressed_" + UUID.randomUUID().toString() + extension;
+            String fileName = "compressed_" + UUID.randomUUID().toString() + outputFormat.extension;
             File compressedFile = new File(tempDir, fileName);
 
-            // Compress and save
             FileOutputStream outputStream = new FileOutputStream(compressedFile);
-            int qualityInt = (int) (quality * 100);
-            bitmap.compress(format, qualityInt, outputStream);
+            int qualityInt = Math.round(quality * 100);
+            bitmap.compress(outputFormat.format, qualityInt, outputStream);
             outputStream.flush();
             outputStream.close();
 
@@ -158,6 +203,31 @@ public class FileCompressorPlugin extends Plugin {
             call.resolve(ret);
         } catch (final Exception e) {
             call.reject("Could not get plugin version", e);
+        }
+    }
+
+    private static final class OutputFormat {
+
+        private final Bitmap.CompressFormat format;
+        private final String extension;
+        private final boolean supportsQuality;
+
+        private OutputFormat(Bitmap.CompressFormat format, String extension, boolean supportsQuality) {
+            this.format = format;
+            this.extension = extension;
+            this.supportsQuality = supportsQuality;
+        }
+
+        private static OutputFormat fromMimeType(String mimeType) {
+            switch (mimeType) {
+                case "image/webp":
+                    return new OutputFormat(Bitmap.CompressFormat.WEBP, ".webp", true);
+                case "image/png":
+                    return new OutputFormat(Bitmap.CompressFormat.PNG, ".png", false);
+                case "image/jpeg":
+                default:
+                    return new OutputFormat(Bitmap.CompressFormat.JPEG, ".jpg", true);
+            }
         }
     }
 }

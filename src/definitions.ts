@@ -8,12 +8,22 @@ export interface FileCompressorPlugin {
    * Compresses an image file with specified dimensions and quality settings.
    *
    * This method compresses images to reduce file size while maintaining acceptable quality.
-   * It supports resizing and format conversion (JPEG/WebP depending on platform).
+   * It supports resizing and format conversion across common image formats.
+   *
+   * **Supported input formats (platform decoder dependent):**
+   * JPEG, PNG, WebP, GIF, BMP, TIFF, HEIF/HEIC
+   *
+   * **Supported output formats:**
+   * - **iOS:** `image/jpeg`, `image/png`, `image/heif`, `image/heic`, `image/webp` (iOS 14+)
+   * - **Android:** `image/jpeg`, `image/png`, `image/webp`
+   * - **Web:** `image/jpeg`, `image/png`, `image/webp`
    *
    * **Important Notes:**
    * - EXIF metadata is removed during compression on all platforms
    * - Aspect ratio is automatically maintained if only one dimension is provided
+   * - When both width and height are provided, the image fits inside that box without upscaling
    * - Compressed files are saved to temporary directories on native platforms
+   * - If the encoded output would be larger than the source file, quality is reduced automatically while keeping the requested output format
    *
    * @param options - Configuration options for image compression
    * @returns Promise that resolves with the compressed image path or blob
@@ -34,18 +44,19 @@ export interface FileCompressorPlugin {
    * ```
    * @example
    * ```typescript
-   * // iOS - Compress image from file path
+   * // iOS - Convert HEIF iPhone photo to JPEG
    * const result = await FileCompressor.compressImage({
-   *   path: 'file:///var/mobile/Containers/Data/image.jpg',
+   *   path: heifFileUri,
    *   quality: 0.7,
-   *   width: 1000,
-   *   mimeType: 'image/jpeg' // Only JPEG supported on iOS
+   *   width: 1920,
+   *   height: 1080,
+   *   mimeType: 'image/jpeg'
    * });
-   * console.log('Compressed to:', result.path);
+   * console.log('Converted to JPEG:', result.path);
    * ```
    * @example
    * ```typescript
-   * // Android - Compress with WebP format
+   * // Android - Convert PNG to WebP
    * const result = await FileCompressor.compressImage({
    *   path: 'content://downloads/document/123',
    *   quality: 0.6,
@@ -61,7 +72,7 @@ export interface FileCompressorPlugin {
    * const result = await FileCompressor.compressImage({
    *   path: imagePath,
    *   quality: 0.75,
-   *   width: 1920, // Height calculated automatically
+   *   width: 1920,
    *   mimeType: 'image/jpeg'
    * });
    * ```
@@ -104,8 +115,10 @@ export interface CompressImageOptions {
    * - iOS: `file://` URLs or absolute paths
    * - Android: `content://` URIs, `file://` URLs, or absolute paths
    *
+   * Common input formats include JPEG, PNG, WebP, GIF, BMP, TIFF, and HEIF/HEIC.
+   *
    * @since 7.0.0
-   * @example "file:///var/mobile/Containers/Data/Application/image.jpg" // iOS
+   * @example "file:///var/mobile/Containers/Data/Application/photo.heic" // iOS HEIF
    * @example "content://com.android.providers.downloads.documents/document/msf%3A1000000485" // Android
    * @example "/storage/emulated/0/Download/photo.png" // Android absolute path
    */
@@ -147,6 +160,7 @@ export interface CompressImageOptions {
    *
    * Higher quality values result in larger files but better visual quality.
    * The actual compression ratio depends on the image content and format.
+   * PNG output ignores quality because it is lossless.
    *
    * @since 7.0.0
    * @default 0.6
@@ -164,8 +178,8 @@ export interface CompressImageOptions {
    * If only width is specified, height is calculated automatically
    * to maintain the original aspect ratio.
    *
-   * If both width and height are specified, the image is resized
-   * to exact dimensions (may distort if ratio differs).
+   * If both width and height are specified, the image is scaled to fit inside
+   * that box while preserving aspect ratio. Images are never upscaled.
    *
    * @since 7.0.0
    * @example 1920 // Full HD width
@@ -182,8 +196,8 @@ export interface CompressImageOptions {
    * If only height is specified, width is calculated automatically
    * to maintain the original aspect ratio.
    *
-   * If both width and height are specified, the image is resized
-   * to exact dimensions (may distort if ratio differs).
+   * If both width and height are specified, the image is scaled to fit inside
+   * that box while preserving aspect ratio. Images are never upscaled.
    *
    * @since 7.0.0
    * @example 1080 // Full HD height
@@ -196,18 +210,24 @@ export interface CompressImageOptions {
    * The MIME type of the compressed output image.
    *
    * **Platform Support:**
-   * - **iOS:** `image/jpeg` only
-   * - **Android:** `image/jpeg`, `image/webp`
-   * - **Web:** `image/jpeg`, `image/webp`
+   * - **iOS:** `image/jpeg`, `image/png`, `image/heif`, `image/heic`, `image/webp` (iOS 14+)
+   * - **Android:** `image/jpeg`, `image/png`, `image/webp`
+   * - **Web:** `image/jpeg`, `image/png`, `image/webp`
+   *
+   * Use this option to convert the source image to another format while compressing.
    *
    * **Format Characteristics:**
    * - **JPEG:** Universal support, good for photos, no transparency
-   * - **WebP:** Better compression, supports transparency, not on iOS
+   * - **PNG:** Lossless, supports transparency
+   * - **WebP:** Better compression, supports transparency
+   * - **HEIF/HEIC:** Efficient photo format on iOS
    *
    * @since 7.0.0
    * @default "image/jpeg"
-   * @example "image/jpeg" // JPEG format (all platforms)
-   * @example "image/webp" // WebP format (Android/Web only)
+   * @example "image/jpeg" // JPEG format
+   * @example "image/png" // PNG format
+   * @example "image/webp" // WebP format
+   * @example "image/heif" // HEIF format (iOS output)
    */
   mimeType?: string;
 }
@@ -235,7 +255,7 @@ export interface CompressImageResult {
    *
    * @since 7.0.0
    * @example "/var/mobile/Containers/Data/tmp/compressed_abc123.jpg" // iOS
-   * @example "/data/user/0/com.app/cache/compressed_xyz789.jpg" // Android
+   * @example "/data/user/0/com.app/cache/compressed_xyz789.webp" // Android
    */
   path?: string;
 
