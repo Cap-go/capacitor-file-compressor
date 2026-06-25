@@ -1,10 +1,14 @@
 import Foundation
 import Capacitor
 import UIKit
+import ImageIO
+import UniformTypeIdentifiers
 
 @objc(FileCompressorPlugin)
 public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
     private let pluginVersion: String = "8.0.34"
+    private let minimumQuality: CGFloat = 0.1
+    private let qualityStep: CGFloat = 0.05
     public let identifier = "FileCompressorPlugin"
     public let jsName = "FileCompressor"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -23,47 +27,47 @@ public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
         let height = call.getInt("height")
         let mimeType = call.getString("mimeType") ?? "image/jpeg"
 
-        // Validate mime type for iOS (only JPEG supported)
-        if mimeType != "image/jpeg" {
-            call.reject("Only image/jpeg is supported on iOS")
+        guard let outputFormat = ImageOutputFormat(mimeType: mimeType) else {
+            call.reject("Unsupported output mimeType: \(mimeType). Supported: \(ImageOutputFormat.supportedMimeTypes.joined(separator: ", "))")
             return
         }
 
-        // Validate quality range
         if quality < 0.0 || quality > 1.0 {
             call.reject("quality must be between 0.0 and 1.0")
             return
         }
 
-        // Load image from path
-        guard let image = loadImage(from: path) else {
+        guard let sourceURL = resolveFileURL(from: path) else {
+            call.reject("Failed to resolve image path")
+            return
+        }
+
+        guard let sourceImage = loadCGImage(from: sourceURL) else {
             call.reject("Failed to load image from path")
             return
         }
 
-        // Resize image if dimensions are provided
-        var processedImage = image
-        if let targetWidth = width, let targetHeight = height {
-            processedImage = resizeImage(image: image, targetWidth: CGFloat(targetWidth), targetHeight: CGFloat(targetHeight))
-        } else if let targetWidth = width {
-            let aspectRatio = image.size.height / image.size.width
-            let targetHeight = CGFloat(targetWidth) * aspectRatio
-            processedImage = resizeImage(image: image, targetWidth: CGFloat(targetWidth), targetHeight: targetHeight)
-        } else if let targetHeight = height {
-            let aspectRatio = image.size.width / image.size.height
-            let targetWidth = CGFloat(targetHeight) * aspectRatio
-            processedImage = resizeImage(image: image, targetWidth: targetWidth, targetHeight: CGFloat(targetHeight))
-        }
+        let targetSize = calculateTargetSize(
+            width: CGFloat(sourceImage.width),
+            height: CGFloat(sourceImage.height),
+            maxWidth: width.map { CGFloat($0) },
+            maxHeight: height.map { CGFloat($0) }
+        )
+        let processedImage = resizeCGImage(sourceImage, targetSize: targetSize)
+        let maxBytes = fileSize(at: sourceURL)
 
-        // Compress image to JPEG
-        guard let imageData = processedImage.jpegData(compressionQuality: CGFloat(quality)) else {
+        guard let imageData = encodeImage(
+            processedImage,
+            format: outputFormat,
+            quality: CGFloat(quality),
+            maxBytes: maxBytes
+        ) else {
             call.reject("Failed to compress image")
             return
         }
 
-        // Save compressed image to temporary file
         let tempDirectory = FileManager.default.temporaryDirectory
-        let fileName = "compressed_\(UUID().uuidString).jpg"
+        let fileName = "compressed_\(UUID().uuidString).\(outputFormat.fileExtension)"
         let fileURL = tempDirectory.appendingPathComponent(fileName)
 
         do {
@@ -76,41 +80,192 @@ public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func loadImage(from path: String) -> UIImage? {
-        // Handle different path types
+    private func resolveFileURL(from path: String) -> URL? {
         if path.hasPrefix("file://") {
-            let url = URL(string: path)
-            if let url = url, let data = try? Data(contentsOf: url) {
-                return UIImage(data: data)
-            }
-        } else if path.hasPrefix("/") {
-            // Absolute file path
-            if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
-                return UIImage(data: data)
-            }
-        } else if path.hasPrefix("content://") || path.hasPrefix("file:///") {
-            // Try to parse as URL
-            if let url = URL(string: path), let data = try? Data(contentsOf: url) {
-                return UIImage(data: data)
-            }
+            return URL(string: path)
         }
 
-        // Try loading from photo library asset identifier
-        // This would require Photos framework integration
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path)
+        }
+
+        if let url = URL(string: path), url.scheme != nil {
+            return url
+        }
 
         return nil
     }
 
-    private func resizeImage(image: UIImage, targetWidth: CGFloat, targetHeight: CGFloat) -> UIImage {
-        let size = CGSize(width: targetWidth, height: targetHeight)
-        let renderer = UIGraphicsImageRenderer(size: size)
-
-        return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
+    private func fileSize(at url: URL) -> Int? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? NSNumber else {
+            return nil
         }
+
+        return size.intValue
+    }
+
+    private func loadCGImage(from url: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return nil
+        }
+
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    private func calculateTargetSize(
+        width: CGFloat,
+        height: CGFloat,
+        maxWidth: CGFloat?,
+        maxHeight: CGFloat?
+    ) -> CGSize {
+        if maxWidth == nil && maxHeight == nil {
+            return CGSize(width: width, height: height)
+        }
+
+        var ratio = CGFloat(1)
+
+        if let maxWidth = maxWidth, let maxHeight = maxHeight {
+            ratio = min(maxWidth / width, maxHeight / height, 1)
+        } else if let maxWidth = maxWidth {
+            ratio = min(maxWidth / width, 1)
+        } else if let maxHeight = maxHeight {
+            ratio = min(maxHeight / height, 1)
+        }
+
+        return CGSize(width: width * ratio, height: height * ratio)
+    }
+
+    private func resizeCGImage(_ image: CGImage, targetSize: CGSize) -> CGImage {
+        let targetWidth = Int(targetSize.width.rounded())
+        let targetHeight = Int(targetSize.height.rounded())
+
+        if targetWidth == image.width && targetHeight == image.height {
+            return image
+        }
+
+        guard let context = CGContext(
+            data: nil,
+            width: targetWidth,
+            height: targetHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return image
+        }
+
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+
+        return context.makeImage() ?? image
+    }
+
+    private func encodeImage(
+        _ image: CGImage,
+        format: ImageOutputFormat,
+        quality: CGFloat,
+        maxBytes: Int?
+    ) -> Data? {
+        var currentQuality = quality
+
+        while true {
+            guard let data = encodeImage(image, format: format, quality: currentQuality) else {
+                return nil
+            }
+
+            let withinSizeLimit = maxBytes.map { data.count <= $0 } ?? true
+            if withinSizeLimit || currentQuality <= minimumQuality || !format.supportsQuality {
+                return data
+            }
+
+            currentQuality = max(minimumQuality, currentQuality - qualityStep)
+        }
+    }
+
+    private func encodeImage(_ image: CGImage, format: ImageOutputFormat, quality: CGFloat) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, format.utType, 1, nil) else {
+            return nil
+        }
+
+        var properties: [CFString: Any] = [:]
+        if format.supportsQuality {
+            properties[kCGImageDestinationLossyCompressionQuality] = quality
+        }
+
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
+        }
+
+        return data as Data
     }
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
         call.resolve(["version": self.pluginVersion])
+    }
+}
+
+private struct ImageOutputFormat {
+    let mimeType: String
+    let utType: CFString
+    let fileExtension: String
+    let supportsQuality: Bool
+
+    init(mimeType: String, utType: CFString, fileExtension: String, supportsQuality: Bool) {
+        self.mimeType = mimeType
+        self.utType = utType
+        self.fileExtension = fileExtension
+        self.supportsQuality = supportsQuality
+    }
+
+    init?(mimeType: String) {
+        switch mimeType.lowercased() {
+        case "image/jpeg", "image/jpg":
+            self.init(
+                mimeType: "image/jpeg",
+                utType: UTType.jpeg.identifier as CFString,
+                fileExtension: "jpg",
+                supportsQuality: true
+            )
+        case "image/png":
+            self.init(
+                mimeType: "image/png",
+                utType: UTType.png.identifier as CFString,
+                fileExtension: "png",
+                supportsQuality: false
+            )
+        case "image/heif", "image/heic":
+            self.init(
+                mimeType: "image/heif",
+                utType: UTType.heic.identifier as CFString,
+                fileExtension: "heic",
+                supportsQuality: true
+            )
+        case "image/webp":
+            if #available(iOS 14.0, *) {
+                self.init(
+                    mimeType: "image/webp",
+                    utType: UTType.webP.identifier as CFString,
+                    fileExtension: "webp",
+                    supportsQuality: true
+                )
+            } else {
+                return nil
+            }
+        default:
+            return nil
+        }
+    }
+
+    static var supportedMimeTypes: [String] {
+        if #available(iOS 14.0, *) {
+            return ["image/jpeg", "image/png", "image/heif", "image/heic", "image/webp"]
+        }
+
+        return ["image/jpeg", "image/png", "image/heif", "image/heic"]
     }
 }

@@ -6,15 +6,16 @@
   <h2><a href="https://capgo.app/consulting/?ref=plugin_file-compressor"> Missing a feature? We'll build the plugin for you 💪</a></h2>
 </div>
 
-Capacitor plugin for efficient image compression supporting PNG, JPEG, and WebP formats across iOS, Android, and Web platforms.
+Capacitor plugin for efficient image compression and **format conversion** across iOS, Android, and Web.
 
 ## Why File Compressor?
 
 A free, open-source alternative for **client-side image compression**:
 
-- **Multiple formats** - JPEG and WebP compression support
+- **Format conversion** - Convert HEIF, PNG, WebP, GIF, and more to JPEG, PNG, WebP, or HEIF
+- **Multiple formats** - Broad input support with platform-specific output formats
 - **Quality control** - Adjustable compression quality (0.0 - 1.0)
-- **Smart resizing** - Automatic aspect ratio preservation
+- **Smart resizing** - Automatic aspect ratio preservation without upscaling
 - **Cross-platform** - Consistent API across iOS, Android, and Web
 - **Zero backend** - All compression happens on the device
 
@@ -56,13 +57,28 @@ npm install @capgo/capacitor-file-compressor
 npx cap sync
 ```
 
-## Platform Support
+## Format Conversion
 
-| Platform | Supported Formats | Notes |
-|----------|-------------------|-------|
-| iOS | JPEG | Only JPEG compression supported |
-| Android | JPEG, WebP | Both formats fully supported |
-| Web | JPEG, WebP | Canvas API-based compression |
+The plugin accepts common image formats as input and converts them to the `mimeType` you request.
+
+| Platform | Input formats | Output formats |
+|----------|---------------|----------------|
+| iOS | JPEG, PNG, WebP, GIF, BMP, TIFF, HEIF/HEIC | JPEG, PNG, HEIF/HEIC, WebP (iOS 14+) |
+| Android | JPEG, PNG, WebP, GIF, BMP, HEIF/HEIC (API 28+) | JPEG, PNG, WebP |
+| Web | Any format the browser can decode | JPEG, PNG, WebP |
+
+```typescript
+import { FileCompressor } from '@capgo/capacitor-file-compressor';
+
+// Convert an iPhone HEIF photo to JPEG before upload
+const result = await FileCompressor.compressImage({
+  path: heifFileUri,
+  width: 1920,
+  height: 1080,
+  quality: 0.7,
+  mimeType: 'image/jpeg',
+});
+```
 
 Note: EXIF metadata is removed during compression on all platforms.
 
@@ -90,12 +106,22 @@ compressImage(options: CompressImageOptions) => Promise<CompressImageResult>
 Compresses an image file with specified dimensions and quality settings.
 
 This method compresses images to reduce file size while maintaining acceptable quality.
-It supports resizing and format conversion (JPEG/WebP depending on platform).
+It supports resizing and format conversion across common image formats.
+
+**Supported input formats (platform decoder dependent):**
+JPEG, PNG, WebP, GIF, BMP, TIFF, HEIF/HEIC
+
+**Supported output formats:**
+- **iOS:** `image/jpeg`, `image/png`, `image/heif`, `image/heic`, `image/webp` (iOS 14+)
+- **Android:** `image/jpeg`, `image/png`, `image/webp`
+- **Web:** `image/jpeg`, `image/png`, `image/webp`
 
 **Important Notes:**
 - EXIF metadata is removed during compression on all platforms
 - Aspect ratio is automatically maintained if only one dimension is provided
+- When both width and height are provided, the image fits inside that box without upscaling
 - Compressed files are saved to temporary directories on native platforms
+- If the encoded output would be larger than the source file, quality is reduced automatically while keeping the requested output format
 
 | Param         | Type                                                                  | Description                                   |
 | ------------- | --------------------------------------------------------------------- | --------------------------------------------- |
@@ -149,13 +175,13 @@ Options for compressing an image.
 Configure the compression behavior including quality, dimensions, and output format.
 Platform-specific options are available for path (native) and blob (web).
 
-| Prop           | Type                | Description                                                                                                                                                                                                                                                                                                                                                                                             | Default                   | Since |
-| -------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----- |
-| **`path`**     | <code>string</code> | The file path of the image to compress. **Platform:** Android, iOS only (not supported on Web) Accepts various path formats: - iOS: `file://` URLs or absolute paths - Android: `content://` URIs, `file://` URLs, or absolute paths                                                                                                                                                                    |                           | 7.0.0 |
-| **`blob`**     | <code>Blob</code>   | The file blob of the image to compress. **Platform:** Web only (not supported on iOS/Android) Use this when compressing images from file inputs, fetch responses, or any other Blob source in web applications.                                                                                                                                                                                         |                           | 7.0.0 |
-| **`quality`**  | <code>number</code> | The quality of the compressed image. **Range:** 0.0 to 1.0 - `0.0` = Maximum compression (lowest quality, smallest file) - `1.0` = Minimum compression (highest quality, largest file) - `0.6` = Default balanced compression **Platform:** All platforms Higher quality values result in larger files but better visual quality. The actual compression ratio depends on the image content and format. | <code>0.6</code>          | 7.0.0 |
-| **`width`**    | <code>number</code> | The width of the compressed image in pixels. **Platform:** All platforms If only width is specified, height is calculated automatically to maintain the original aspect ratio. If both width and height are specified, the image is resized to exact dimensions (may distort if ratio differs).                                                                                                         |                           | 7.0.0 |
-| **`height`**   | <code>number</code> | The height of the compressed image in pixels. **Platform:** All platforms If only height is specified, width is calculated automatically to maintain the original aspect ratio. If both width and height are specified, the image is resized to exact dimensions (may distort if ratio differs).                                                                                                        |                           | 7.0.0 |
-| **`mimeType`** | <code>string</code> | The MIME type of the compressed output image. **Platform Support:** - **iOS:** `image/jpeg` only - **Android:** `image/jpeg`, `image/webp` - **Web:** `image/jpeg`, `image/webp` **Format Characteristics:** - **JPEG:** Universal support, good for photos, no transparency - **WebP:** Better compression, supports transparency, not on iOS                                                          | <code>"image/jpeg"</code> | 7.0.0 |
+| Prop           | Type                | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Default                   | Since |
+| -------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----- |
+| **`path`**     | <code>string</code> | The file path of the image to compress. **Platform:** Android, iOS only (not supported on Web) Accepts various path formats: - iOS: `file://` URLs or absolute paths - Android: `content://` URIs, `file://` URLs, or absolute paths Common input formats include JPEG, PNG, WebP, GIF, BMP, TIFF, and HEIF/HEIC.                                                                                                                                                                                                                                                                                   |                           | 7.0.0 |
+| **`blob`**     | <code>Blob</code>   | The file blob of the image to compress. **Platform:** Web only (not supported on iOS/Android) Use this when compressing images from file inputs, fetch responses, or any other Blob source in web applications.                                                                                                                                                                                                                                                                                                                                                                                     |                           | 7.0.0 |
+| **`quality`**  | <code>number</code> | The quality of the compressed image. **Range:** 0.0 to 1.0 - `0.0` = Maximum compression (lowest quality, smallest file) - `1.0` = Minimum compression (highest quality, largest file) - `0.6` = Default balanced compression **Platform:** All platforms Higher quality values result in larger files but better visual quality. The actual compression ratio depends on the image content and format. PNG output ignores quality because it is lossless.                                                                                                                                          | <code>0.6</code>          | 7.0.0 |
+| **`width`**    | <code>number</code> | The width of the compressed image in pixels. **Platform:** All platforms If only width is specified, height is calculated automatically to maintain the original aspect ratio. If both width and height are specified, the image is scaled to fit inside that box while preserving aspect ratio. Images are never upscaled.                                                                                                                                                                                                                                                                         |                           | 7.0.0 |
+| **`height`**   | <code>number</code> | The height of the compressed image in pixels. **Platform:** All platforms If only height is specified, width is calculated automatically to maintain the original aspect ratio. If both width and height are specified, the image is scaled to fit inside that box while preserving aspect ratio. Images are never upscaled.                                                                                                                                                                                                                                                                        |                           | 7.0.0 |
+| **`mimeType`** | <code>string</code> | The MIME type of the compressed output image. **Platform Support:** - **iOS:** `image/jpeg`, `image/png`, `image/heif`, `image/heic`, `image/webp` (iOS 14+) - **Android:** `image/jpeg`, `image/png`, `image/webp` - **Web:** `image/jpeg`, `image/png`, `image/webp` Use this option to convert the source image to another format while compressing. **Format Characteristics:** - **JPEG:** Universal support, good for photos, no transparency - **PNG:** Lossless, supports transparency - **WebP:** Better compression, supports transparency - **HEIF/HEIC:** Efficient photo format on iOS | <code>"image/jpeg"</code> | 7.0.0 |
 
 </docgen-api>
