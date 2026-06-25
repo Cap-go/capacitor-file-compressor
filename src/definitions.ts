@@ -14,6 +14,7 @@ export interface FileCompressorPlugin {
    * - EXIF metadata is removed during compression on all platforms
    * - Aspect ratio is automatically maintained if only one dimension is provided
    * - Compressed files are saved to temporary directories on native platforms
+   * - If compression would increase file size, the original image is returned instead
    *
    * @param options - Configuration options for image compression
    * @returns Promise that resolves with the compressed image path or blob

@@ -1,9 +1,9 @@
 package io.capgo.filecompressor;
 
+import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
-import android.webkit.MimeTypeMap;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -46,6 +46,8 @@ public class FileCompressorPlugin extends Plugin {
         }
 
         try {
+            long originalSize = getOriginalFileSize(path);
+
             // Load bitmap from path
             Bitmap bitmap = loadBitmapFromPath(path);
             if (bitmap == null) {
@@ -82,11 +84,39 @@ public class FileCompressorPlugin extends Plugin {
 
             // Return result
             JSObject result = new JSObject();
-            result.put("path", compressedFile.getAbsolutePath());
+            if (originalSize > 0 && compressedFile.length() > originalSize) {
+                compressedFile.delete();
+                result.put("path", path);
+            } else {
+                result.put("path", compressedFile.getAbsolutePath());
+            }
             call.resolve(result);
         } catch (Exception e) {
             call.reject("Error compressing image: " + e.getMessage(), e);
         }
+    }
+
+    private long getOriginalFileSize(String path) {
+        try {
+            if (path.startsWith("content://")) {
+                Uri uri = Uri.parse(path);
+                try (AssetFileDescriptor descriptor = getContext().getContentResolver().openAssetFileDescriptor(uri, "r")) {
+                    if (descriptor != null) {
+                        return descriptor.getLength();
+                    }
+                }
+            } else {
+                String filePath = path.startsWith("file://") ? path.substring(7) : path;
+                File file = new File(filePath);
+                if (file.exists()) {
+                    return file.length();
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return -1;
     }
 
     private Bitmap loadBitmapFromPath(String path) {

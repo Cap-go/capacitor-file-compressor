@@ -96,6 +96,7 @@ It supports resizing and format conversion (JPEG/WebP depending on platform).
 - EXIF metadata is removed during compression on all platforms
 - Aspect ratio is automatically maintained if only one dimension is provided
 - Compressed files are saved to temporary directories on native platforms
+- If compression would increase file size, the original image is returned instead
 
 | Param         | Type                                                                  | Description                                   |
 | ------------- | --------------------------------------------------------------------- | --------------------------------------------- |

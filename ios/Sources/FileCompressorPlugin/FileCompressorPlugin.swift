@@ -35,6 +35,8 @@ public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        let originalSize = fileSize(at: path)
+
         // Load image from path
         guard let image = loadImage(from: path) else {
             call.reject("Failed to load image from path")
@@ -68,6 +70,15 @@ public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
 
         do {
             try imageData.write(to: fileURL)
+
+            if let originalSize = originalSize, imageData.count > originalSize {
+                try? FileManager.default.removeItem(at: fileURL)
+                call.resolve([
+                    "path": resolveOutputPath(for: path)
+                ])
+                return
+            }
+
             call.resolve([
                 "path": fileURL.path
             ])
@@ -99,6 +110,39 @@ public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
         // This would require Photos framework integration
 
         return nil
+    }
+
+    private func fileURL(from path: String) -> URL? {
+        if path.hasPrefix("file://") {
+            return URL(string: path)
+        }
+
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path)
+        }
+
+        return nil
+    }
+
+    private func fileSize(at path: String) -> Int? {
+        guard let url = fileURL(from: path) else {
+            return nil
+        }
+
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? NSNumber else {
+            return nil
+        }
+
+        return size.intValue
+    }
+
+    private func resolveOutputPath(for path: String) -> String {
+        if path.hasPrefix("file://") {
+            return fileURL(from: path)?.path ?? path
+        }
+
+        return path
     }
 
     private func resizeImage(image: UIImage, targetWidth: CGFloat, targetHeight: CGFloat) -> UIImage {

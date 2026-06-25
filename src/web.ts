@@ -57,6 +57,10 @@ export class FileCompressorWeb extends WebPlugin implements FileCompressorPlugin
       );
     });
 
+    if (blob.size > options.blob.size) {
+      return { blob: options.blob };
+    }
+
     return { blob };
   }
 
