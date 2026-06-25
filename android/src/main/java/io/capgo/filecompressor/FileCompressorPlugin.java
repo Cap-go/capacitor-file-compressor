@@ -19,6 +19,8 @@ import java.util.UUID;
 public class FileCompressorPlugin extends Plugin {
 
     private final String pluginVersion = "8.0.34";
+    private static final float MIN_QUALITY = 0.1f;
+    private static final float QUALITY_STEP = 0.05f;
 
     @PluginMethod
     public void compressImage(PluginCall call) {
@@ -33,67 +35,71 @@ public class FileCompressorPlugin extends Plugin {
         Integer height = call.getInt("height");
         String mimeType = call.getString("mimeType", "image/jpeg");
 
-        // Validate mime type for Android
         if (!mimeType.equals("image/jpeg") && !mimeType.equals("image/webp")) {
             call.reject("Only image/jpeg and image/webp are supported on Android");
             return;
         }
 
-        // Validate quality range
         if (quality < 0.0f || quality > 1.0f) {
             call.reject("quality must be between 0.0 and 1.0");
             return;
         }
 
         try {
-            long originalSize = getOriginalFileSize(path);
+            long maxBytes = getOriginalFileSize(path);
 
-            // Load bitmap from path
             Bitmap bitmap = loadBitmapFromPath(path);
             if (bitmap == null) {
                 call.reject("Failed to load image from path");
                 return;
             }
 
-            // Resize bitmap if dimensions are provided
+            int[] targetDimensions = calculateTargetDimensions(bitmap, width, height);
             Bitmap processedBitmap = bitmap;
-            if (width != null && height != null) {
-                processedBitmap = Bitmap.createScaledBitmap(bitmap, width, height, true);
-            } else if (width != null) {
-                float aspectRatio = (float) bitmap.getHeight() / bitmap.getWidth();
-                int targetHeight = (int) (width * aspectRatio);
-                processedBitmap = Bitmap.createScaledBitmap(bitmap, width, targetHeight, true);
-            } else if (height != null) {
-                float aspectRatio = (float) bitmap.getWidth() / bitmap.getHeight();
-                int targetWidth = (int) (height * aspectRatio);
-                processedBitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, height, true);
+            if (targetDimensions[0] != bitmap.getWidth() || targetDimensions[1] != bitmap.getHeight()) {
+                processedBitmap = Bitmap.createScaledBitmap(bitmap, targetDimensions[0], targetDimensions[1], true);
             }
 
-            // Compress bitmap
-            File compressedFile = compressBitmap(processedBitmap, quality, mimeType);
+            File compressedFile = compressBitmap(processedBitmap, quality, mimeType, maxBytes);
             if (compressedFile == null) {
                 call.reject("Failed to compress image");
                 return;
             }
 
-            // Clean up
             if (processedBitmap != bitmap) {
                 processedBitmap.recycle();
             }
             bitmap.recycle();
 
-            // Return result
             JSObject result = new JSObject();
-            if (originalSize > 0 && compressedFile.length() > originalSize) {
-                compressedFile.delete();
-                result.put("path", path);
-            } else {
-                result.put("path", compressedFile.getAbsolutePath());
-            }
+            result.put("path", compressedFile.getAbsolutePath());
             call.resolve(result);
         } catch (Exception e) {
             call.reject("Error compressing image: " + e.getMessage(), e);
         }
+    }
+
+    private int[] calculateTargetDimensions(Bitmap bitmap, Integer maxWidth, Integer maxHeight) {
+        int sourceWidth = bitmap.getWidth();
+        int sourceHeight = bitmap.getHeight();
+
+        if (maxWidth == null && maxHeight == null) {
+            return new int[] { sourceWidth, sourceHeight };
+        }
+
+        float ratio = 1f;
+
+        if (maxWidth != null && maxHeight != null) {
+            ratio = Math.min((float) maxWidth / sourceWidth, (float) maxHeight / sourceHeight);
+        } else if (maxWidth != null) {
+            ratio = (float) maxWidth / sourceWidth;
+        } else if (maxHeight != null) {
+            ratio = (float) maxHeight / sourceHeight;
+        }
+
+        ratio = Math.min(ratio, 1f);
+
+        return new int[] { Math.round(sourceWidth * ratio), Math.round(sourceHeight * ratio) };
     }
 
     private long getOriginalFileSize(String path) {
@@ -121,7 +127,6 @@ public class FileCompressorPlugin extends Plugin {
 
     private Bitmap loadBitmapFromPath(String path) {
         try {
-            // Handle content:// URIs
             if (path.startsWith("content://")) {
                 Uri uri = Uri.parse(path);
                 InputStream inputStream = getContext().getContentResolver().openInputStream(uri);
@@ -130,13 +135,10 @@ public class FileCompressorPlugin extends Plugin {
                     inputStream.close();
                     return bitmap;
                 }
-            }
-            // Handle file:// URIs and absolute paths
-            else if (path.startsWith("file://")) {
-                path = path.substring(7); // Remove "file://" prefix
+            } else if (path.startsWith("file://")) {
+                path = path.substring(7);
             }
 
-            // Try loading as file path
             File file = new File(path);
             if (file.exists()) {
                 return BitmapFactory.decodeFile(file.getAbsolutePath());
@@ -147,28 +149,51 @@ public class FileCompressorPlugin extends Plugin {
         return null;
     }
 
-    private File compressBitmap(Bitmap bitmap, float quality, String mimeType) {
-        try {
-            // Determine compression format and file extension
-            Bitmap.CompressFormat format;
-            String extension;
+    private File compressBitmap(Bitmap bitmap, float quality, String mimeType, long maxBytes) {
+        Bitmap.CompressFormat format;
+        String extension;
 
-            if (mimeType.equals("image/webp")) {
-                format = Bitmap.CompressFormat.WEBP;
-                extension = ".webp";
-            } else {
-                format = Bitmap.CompressFormat.JPEG;
-                extension = ".jpg";
+        if (mimeType.equals("image/webp")) {
+            format = Bitmap.CompressFormat.WEBP;
+            extension = ".webp";
+        } else {
+            format = Bitmap.CompressFormat.JPEG;
+            extension = ".jpg";
+        }
+
+        float currentQuality = quality;
+        File lastFile = null;
+
+        while (true) {
+            File compressedFile = writeCompressedBitmap(bitmap, format, extension, currentQuality);
+            if (compressedFile == null) {
+                if (lastFile != null) {
+                    return lastFile;
+                }
+                return null;
             }
 
-            // Create temporary file
+            if (lastFile != null && lastFile != compressedFile) {
+                lastFile.delete();
+            }
+
+            if (maxBytes <= 0 || compressedFile.length() <= maxBytes || currentQuality <= MIN_QUALITY) {
+                return compressedFile;
+            }
+
+            lastFile = compressedFile;
+            currentQuality = Math.max(MIN_QUALITY, currentQuality - QUALITY_STEP);
+        }
+    }
+
+    private File writeCompressedBitmap(Bitmap bitmap, Bitmap.CompressFormat format, String extension, float quality) {
+        try {
             File tempDir = getContext().getCacheDir();
             String fileName = "compressed_" + UUID.randomUUID().toString() + extension;
             File compressedFile = new File(tempDir, fileName);
 
-            // Compress and save
             FileOutputStream outputStream = new FileOutputStream(compressedFile);
-            int qualityInt = (int) (quality * 100);
+            int qualityInt = Math.round(quality * 100);
             bitmap.compress(format, qualityInt, outputStream);
             outputStream.flush();
             outputStream.close();

@@ -5,6 +5,8 @@ import UIKit
 @objc(FileCompressorPlugin)
 public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
     private let pluginVersion: String = "8.0.34"
+    private let minimumQuality: CGFloat = 0.1
+    private let qualityStep: CGFloat = 0.05
     public let identifier = "FileCompressorPlugin"
     public let jsName = "FileCompressor"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -23,62 +25,40 @@ public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
         let height = call.getInt("height")
         let mimeType = call.getString("mimeType") ?? "image/jpeg"
 
-        // Validate mime type for iOS (only JPEG supported)
         if mimeType != "image/jpeg" {
             call.reject("Only image/jpeg is supported on iOS")
             return
         }
 
-        // Validate quality range
         if quality < 0.0 || quality > 1.0 {
             call.reject("quality must be between 0.0 and 1.0")
             return
         }
 
-        let originalSize = fileSize(at: path)
-
-        // Load image from path
         guard let image = loadImage(from: path) else {
             call.reject("Failed to load image from path")
             return
         }
 
-        // Resize image if dimensions are provided
-        var processedImage = image
-        if let targetWidth = width, let targetHeight = height {
-            processedImage = resizeImage(image: image, targetWidth: CGFloat(targetWidth), targetHeight: CGFloat(targetHeight))
-        } else if let targetWidth = width {
-            let aspectRatio = image.size.height / image.size.width
-            let targetHeight = CGFloat(targetWidth) * aspectRatio
-            processedImage = resizeImage(image: image, targetWidth: CGFloat(targetWidth), targetHeight: targetHeight)
-        } else if let targetHeight = height {
-            let aspectRatio = image.size.width / image.size.height
-            let targetWidth = CGFloat(targetHeight) * aspectRatio
-            processedImage = resizeImage(image: image, targetWidth: targetWidth, targetHeight: CGFloat(targetHeight))
-        }
+        let targetSize = calculateTargetSize(
+            image: image,
+            maxWidth: width.map { CGFloat($0) },
+            maxHeight: height.map { CGFloat($0) }
+        )
+        let processedImage = resizeImage(image: image, targetSize: targetSize)
+        let maxBytes = fileSize(at: path)
 
-        // Compress image to JPEG
-        guard let imageData = processedImage.jpegData(compressionQuality: CGFloat(quality)) else {
+        guard let imageData = jpegData(for: processedImage, quality: CGFloat(quality), maxBytes: maxBytes) else {
             call.reject("Failed to compress image")
             return
         }
 
-        // Save compressed image to temporary file
         let tempDirectory = FileManager.default.temporaryDirectory
         let fileName = "compressed_\(UUID().uuidString).jpg"
         let fileURL = tempDirectory.appendingPathComponent(fileName)
 
         do {
             try imageData.write(to: fileURL)
-
-            if let originalSize = originalSize, imageData.count > originalSize {
-                try? FileManager.default.removeItem(at: fileURL)
-                call.resolve([
-                    "path": resolveOutputPath(for: path)
-                ])
-                return
-            }
-
             call.resolve([
                 "path": fileURL.path
             ])
@@ -88,26 +68,20 @@ public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func loadImage(from path: String) -> UIImage? {
-        // Handle different path types
         if path.hasPrefix("file://") {
             let url = URL(string: path)
             if let url = url, let data = try? Data(contentsOf: url) {
                 return UIImage(data: data)
             }
         } else if path.hasPrefix("/") {
-            // Absolute file path
             if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
                 return UIImage(data: data)
             }
         } else if path.hasPrefix("content://") || path.hasPrefix("file:///") {
-            // Try to parse as URL
             if let url = URL(string: path), let data = try? Data(contentsOf: url) {
                 return UIImage(data: data)
             }
         }
-
-        // Try loading from photo library asset identifier
-        // This would require Photos framework integration
 
         return nil
     }
@@ -137,21 +111,57 @@ public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
         return size.intValue
     }
 
-    private func resolveOutputPath(for path: String) -> String {
-        if path.hasPrefix("file://") {
-            return fileURL(from: path)?.path ?? path
+    private func calculateTargetSize(image: UIImage, maxWidth: CGFloat?, maxHeight: CGFloat?) -> CGSize {
+        let sourceWidth = image.size.width * image.scale
+        let sourceHeight = image.size.height * image.scale
+
+        if maxWidth == nil && maxHeight == nil {
+            return image.size
         }
 
-        return path
+        var ratio = CGFloat(1)
+
+        if let maxWidth = maxWidth, let maxHeight = maxHeight {
+            ratio = min(maxWidth / sourceWidth, maxHeight / sourceHeight, 1)
+        } else if let maxWidth = maxWidth {
+            ratio = min(maxWidth / sourceWidth, 1)
+        } else if let maxHeight = maxHeight {
+            ratio = min(maxHeight / sourceHeight, 1)
+        }
+
+        let targetWidth = sourceWidth * ratio
+        let targetHeight = sourceHeight * ratio
+
+        return CGSize(width: targetWidth / image.scale, height: targetHeight / image.scale)
     }
 
-    private func resizeImage(image: UIImage, targetWidth: CGFloat, targetHeight: CGFloat) -> UIImage {
-        let size = CGSize(width: targetWidth, height: targetHeight)
-        let renderer = UIGraphicsImageRenderer(size: size)
-
-        return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
+    private func resizeImage(image: UIImage, targetSize: CGSize) -> UIImage {
+        if targetSize == image.size {
+            return image
         }
+
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
+
+    private func jpegData(for image: UIImage, quality: CGFloat, maxBytes: Int?) -> Data? {
+        var currentQuality = quality
+
+        while true {
+            guard let data = image.jpegData(compressionQuality: currentQuality) else {
+                return nil
+            }
+
+            let withinSizeLimit = maxBytes.map { data.count <= $0 } ?? true
+            if withinSizeLimit || currentQuality <= minimumQuality {
+                return data
+            }
+
+            currentQuality = max(minimumQuality, currentQuality - qualityStep)
+        }
+    }
     }
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {

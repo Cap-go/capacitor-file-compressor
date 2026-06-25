@@ -13,8 +13,9 @@ export interface FileCompressorPlugin {
    * **Important Notes:**
    * - EXIF metadata is removed during compression on all platforms
    * - Aspect ratio is automatically maintained if only one dimension is provided
+   * - When both width and height are provided, the image fits inside that box without upscaling
    * - Compressed files are saved to temporary directories on native platforms
-   * - If compression would increase file size, the original image is returned instead
+   * - If the encoded output would be larger than the source file, quality is reduced automatically while keeping the requested output format
    *
    * @param options - Configuration options for image compression
    * @returns Promise that resolves with the compressed image path or blob
@@ -165,8 +166,8 @@ export interface CompressImageOptions {
    * If only width is specified, height is calculated automatically
    * to maintain the original aspect ratio.
    *
-   * If both width and height are specified, the image is resized
-   * to exact dimensions (may distort if ratio differs).
+   * If both width and height are specified, the image is scaled to fit inside
+   * that box while preserving aspect ratio. Images are never upscaled.
    *
    * @since 7.0.0
    * @example 1920 // Full HD width
@@ -183,8 +184,8 @@ export interface CompressImageOptions {
    * If only height is specified, width is calculated automatically
    * to maintain the original aspect ratio.
    *
-   * If both width and height are specified, the image is resized
-   * to exact dimensions (may distort if ratio differs).
+   * If both width and height are specified, the image is scaled to fit inside
+   * that box while preserving aspect ratio. Images are never upscaled.
    *
    * @since 7.0.0
    * @example 1080 // Full HD height
