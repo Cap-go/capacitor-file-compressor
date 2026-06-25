@@ -20,7 +20,7 @@ import java.util.UUID;
 @CapacitorPlugin(name = "FileCompressor")
 public class FileCompressorPlugin extends Plugin {
 
-    private final String pluginVersion = "8.0.34";
+    private final String pluginVersion = "8.1.0";
     private static final float MIN_QUALITY = 0.1f;
     private static final float QUALITY_STEP = 0.05f;
     private static final List<String> SUPPORTED_OUTPUT_MIME_TYPES = Arrays.asList("image/jpeg", "image/png", "image/webp");

@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 @objc(FileCompressorPlugin)
 public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
-    private let pluginVersion: String = "8.0.34"
+    private let pluginVersion: String = "8.1.0"
     private let minimumQuality: CGFloat = 0.1
     private let qualityStep: CGFloat = 0.05
     public let identifier = "FileCompressorPlugin"
