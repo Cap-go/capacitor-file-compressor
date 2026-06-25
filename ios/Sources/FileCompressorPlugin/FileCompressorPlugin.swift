@@ -162,7 +162,6 @@ public class FileCompressorPlugin: CAPPlugin, CAPBridgedPlugin {
             currentQuality = max(minimumQuality, currentQuality - qualityStep)
         }
     }
-    }
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
         call.resolve(["version": self.pluginVersion])
