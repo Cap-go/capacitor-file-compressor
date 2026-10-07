@@ -1,12 +1,28 @@
 # @capgo/capacitor-file-compressor
-<a href="https://capgo.app/"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-file-compressor" alt="Capgo - Instant updates for Capacitor" /></a>
+
+Compress and resize images on the device before upload, and convert between JPEG, PNG and WebP. Smaller files mean faster uploads and lower storage costs.
+
+<a href="https://capgo.app/?ref=plugin_file-compressor"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-file-compressor" alt="Capgo - Instant updates for Capacitor" /></a>
 
 <div align="center">
-  <h2><a href="https://capgo.app/?ref=plugin_file-compressor"> ➡️ Get Instant updates for your App with Capgo</a></h2>
-  <h2><a href="https://capgo.app/consulting/?ref=plugin_file-compressor"> Missing a feature? We'll build the plugin for you 💪</a></h2>
+  <p><b>Capgo</b>: open-source live updates for Ionic and Capacitor apps. Ship OTA fixes and features instantly, without waiting for app store review.</p>
+  <h2><a href="https://capgo.app/register/?ref=plugin_file-compressor">➡️ Get started for free</a></h2>
+  <p>14-day unlimited free trial. No credit card required</p>
+  <p><a href="https://capgo.app/consulting/?ref=plugin_file-compressor">Missing a feature? We'll build the plugin for you 💪</a></p>
 </div>
 
-Capacitor plugin for efficient image compression and **format conversion** across iOS, Android, and Web.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Cap-go/capacitor-file-compressor/main/assets/github-social-preview.png" alt="@capgo/capacitor-file-compressor for Capacitor apps" width="300" />
+</p>
+
+## Key features
+
+- **One call**: `compressImage()` resizes and compresses with your width, height and quality.
+- **Format conversion**: output JPEG, PNG or WebP on all platforms, plus HEIF or HEIC on iOS.
+- **Smart sizing**: keeps the aspect ratio and never upscales.
+- **Never bigger**: if the result would be larger than the source, quality is lowered automatically.
+- **Privacy**: EXIF metadata is removed during compression.
+- **Platforms**: iOS, Android and Web. iOS uses ImageIO, Android uses `Bitmap`, web uses the canvas.
 
 ## Why File Compressor?
 
