@@ -18,9 +18,9 @@ Compress and resize images on the device before upload, and convert between JPEG
 ## Key features
 
 - **One call**: `compressImage()` resizes and compresses with your width, height and quality.
-- **Format conversion**: output JPEG, PNG or WebP on all platforms, plus HEIF or HEIC on iOS.
+- **Format conversion**: output JPEG, PNG or WebP on Android and web. iOS adds HEIF or HEIC, and WebP needs iOS 14 or later.
 - **Smart sizing**: keeps the aspect ratio and never upscales.
-- **Never bigger**: if the result would be larger than the source, quality is lowered automatically.
+- **Best-effort size**: if the result is larger than the source, quality is lowered for lossy formats. PNG has no quality setting, so the output can still be larger.
 - **Privacy**: EXIF metadata is removed during compression.
 - **Platforms**: iOS, Android and Web. iOS uses ImageIO, Android uses `Bitmap`, web uses the canvas.
 
